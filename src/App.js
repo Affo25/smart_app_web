@@ -123,7 +123,7 @@ function MenuList({ addToCart, showToast }) {
               <h3>{item.name || item.title}</h3>
               <p className="description">{item.description}</p>
               <div className="item-footer">
-                <span className="price">${parseFloat(item.price ?? 0).toFixed(2)}</span>
+                <span className="price">PKR {parseFloat(item.price ?? 0).toFixed(2)}</span>
                 <button className="add-btn" onClick={() => addToCart(item)}>Add to Order</button>
               </div>
             </div>
@@ -174,13 +174,13 @@ function OrderSuccessScreen() {
                 <span>
                   {item.quantity}× {item.name || item.title}
                 </span>
-                <span>${(item.price * item.quantity).toFixed(2)}</span>
+                <span>PKR {(item.price * item.quantity).toFixed(2)}</span>
               </li>
             ))}
           </ul>
           <div className="order-success-total">
             <span>Total</span>
-            <span>${total.toFixed(2)}</span>
+            <span>PKR {total.toFixed(2)}</span>
           </div>
         </div>
 
@@ -359,7 +359,7 @@ function MainApp() {
                 <div key={item.id} className="cart-item">
                   <div className="cart-item-info">
                     <h4>{item.name || item.title}</h4>
-                    <span>${(item.price * item.quantity).toFixed(2)}</span>
+                    <span>PKR {(item.price * item.quantity).toFixed(2)}</span>
                   </div>
                   <div className="cart-item-actions">
                     <button onClick={() => updateQuantity(item.id, -1)}>-</button>
@@ -375,7 +375,7 @@ function MainApp() {
             <div className="cart-footer">
               <div className="total">
                 <span>Total:</span>
-                <span>${totalAmount.toFixed(2)}</span>
+                <span>PKR {totalAmount.toFixed(2)}</span>
               </div>
               <button
                 className="checkout-btn"
