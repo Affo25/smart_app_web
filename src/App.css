@@ -1,7 +1,8 @@
 :root {
   --primary: #2c3e50;
-  --accent: #ff4757;
-  --red: #ff4757;
+  --accent: #FF0000;
+  --red: #FF0000;
+  --red-dark: #cc0000;
   --bg: #f8f9fa;
   --card-bg: #ffffff;
   --text: #2d3436;
@@ -210,7 +211,7 @@ body {
 }
 
 .add-btn:hover {
-  background: #c0392b;
+  background: var(--red-dark);
 }
 
 /* Cart Sidebar */
@@ -456,7 +457,7 @@ body {
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: #c0392b;
+  color: var(--red);
   font-weight: 700;
   margin-bottom: 0.35rem;
 }
@@ -547,7 +548,7 @@ body {
 }
 
 .order-success-btn-primary:hover {
-  background: #c0392b;
+  background: var(--red-dark);
 }
 
 .order-success-btn-primary:active {
