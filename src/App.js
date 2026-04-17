@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useParams, useLocation, useNavigate } from 'react-router-dom';
-import { collection, getDocs, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, getDocs, addDoc, serverTimestamp, onSnapshot, doc } from 'firebase/firestore';
 import { db } from './firebase';
 import './App.css';
 
@@ -134,7 +134,7 @@ function MenuList({ addToCart, showToast }) {
   );
 }
 
-function OrderSuccessScreen() {
+function OrderSuccessScreen({ lastOrderStatus }) {
   const navigate = useNavigate();
   const location = useLocation();
   const data = location.state?.orderId ? location.state : readStoredOrderPayload();
@@ -146,15 +146,25 @@ function OrderSuccessScreen() {
   const { orderId, items, total, menuId } = data;
   const backMenuPath = `/menu/${menuId || DEFAULT_MENU_ID}`;
 
+  // Use lastOrderStatus if it's available and refers to the same order we are viewing
+  const displayStatus = (lastOrderStatus && data.orderId === readStoredOrderPayload()?.orderId) 
+    ? lastOrderStatus 
+    : data.status;
+
   return (
     <section className="order-success-page" aria-labelledby="order-success-title">
       <div className="order-success-inner">
         <div className="order-success-badge" aria-hidden>✓</div>
-        <h1 id="order-success-title" className="order-success-heading">
-          Order confirmed
-        </h1>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', marginBottom: '1.5rem' }}>
+          <h1 id="order-success-title" className="order-success-heading" style={{ fontSize: '1.5rem', margin: 0 }}>
+            Order Details
+          </h1>
+          <span className={`status-badge ${(displayStatus || 'pending').toLowerCase()}`}>
+            {displayStatus}
+          </span>
+        </div>
         <p className="order-success-id">Order #{orderId}</p>
-
+{/* 
         <div className="order-success-delivery">
           <span className="order-success-delivery-icon" aria-hidden>🕒</span>
           <div className="order-success-delivery-text">
@@ -164,7 +174,7 @@ function OrderSuccessScreen() {
               We will prepare your items fresh and bring them to your table.
             </p>
           </div>
-        </div>
+        </div> */}
 
         <div className="order-success-summary">
           <h2 className="order-success-summary-title">Your order</h2>
@@ -211,11 +221,46 @@ function MainApp() {
   const [toast, setToast] = useState(null);
   const [orderSubmitting, setOrderSubmitting] = useState(false);
   const [hasLastOrder, setHasLastOrder] = useState(() => !!readStoredOrderPayload());
+  const [lastOrderStatus, setLastOrderStatus] = useState(() => readStoredOrderPayload()?.status || 'pending');
 
   const showToast = (message) => {
     setToast(message);
     setTimeout(() => setToast(null), 3000);
   };
+
+  useEffect(() => {
+    if (!hasLastOrder) return;
+
+    const stored = readStoredOrderPayload();
+    if (!stored?.orderId) return;
+
+    const orderRef = doc(db, 'orders', stored.orderId);
+    const unsubscribe = onSnapshot(orderRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const newData = docSnap.data();
+        const currentStored = readStoredOrderPayload();
+        
+        // Update local status state
+        setLastOrderStatus(newData.status);
+
+        // Only show toast and update storage if status actually changed
+        if (currentStored && newData.status !== currentStored.status) {
+          showToast(`Order status updated to: ${newData.status}`);
+          persistLastOrderPayload({ ...currentStored, status: newData.status });
+          
+          // Force a state update if we're on the success screen to reflect the new status
+          if (location.pathname === '/order-success') {
+            navigate('/order-success', { 
+              state: { ...currentStored, status: newData.status }, 
+              replace: true 
+            });
+          }
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, [hasLastOrder, location.pathname, navigate]);
 
   const addToCart = (item) => {
     setCart(prevCart => {
@@ -257,9 +302,11 @@ function MainApp() {
         items: [...cart],
         total: totalAmount,
         menuId: activeMenuId || DEFAULT_MENU_ID,
+        status: 'pending',
       };
       persistLastOrderPayload(orderPayload);
       setHasLastOrder(true);
+      setLastOrderStatus('pending');
       setCart([]);
       setIsCartOpen(false);
       showToast('Order placed successfully! 🎉');
@@ -294,31 +341,36 @@ function MainApp() {
           <h1>Smart Cafe</h1>
           <div className="header-actions">
             {hasLastOrder && (
-              <button
-                type="button"
-                className="header-icon-btn"
-                onClick={openOrderDetails}
-                aria-label="View order details"
-                title="Order details"
-              >
-                <svg
-                  className="header-icon-svg"
-                  width="22"
-                  height="22"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  xmlns="http://www.w3.org/2000/svg"
-                  aria-hidden
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span className={`status-badge ${(lastOrderStatus || 'pending').toLowerCase()}`} style={{ fontSize: '0.7rem' }}>
+                  {lastOrderStatus}
+                </span>
+                <button
+                  type="button"
+                  className="header-icon-btn"
+                  onClick={openOrderDetails}
+                  aria-label="View order details"
+                  title="Order details"
                 >
-                  <path
-                    d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              </button>
+                  <svg
+                    className="header-icon-svg"
+                    width="22"
+                    height="22"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    xmlns="http://www.w3.org/2000/svg"
+                    aria-hidden
+                  >
+                    <path
+                      d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </button>
+              </div>
             )}
             {!isOrderSuccess && (
               <button className="cart-toggle" onClick={() => setIsCartOpen(!isCartOpen)}>
@@ -339,7 +391,7 @@ function MainApp() {
 
         <Routes>
           <Route path="/menu/:menuId" element={<MenuList addToCart={addToCart} showToast={showToast} />} />
-          <Route path="/order-success" element={<OrderSuccessScreen />} />
+          <Route path="/order-success" element={<OrderSuccessScreen lastOrderStatus={lastOrderStatus} />} />
           <Route path="/" element={<Navigate to={`/menu/${DEFAULT_MENU_ID}`} replace />} />
         </Routes>
       </main>
