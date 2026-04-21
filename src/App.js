@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useParams, useLocation, useNavigate } from 'react-router-dom';
-import { collection, getDocs, addDoc, serverTimestamp, onSnapshot, doc } from 'firebase/firestore';
+import { collection, getDocs, addDoc, serverTimestamp, onSnapshot, doc, getDoc } from 'firebase/firestore';
 import { db } from './firebase';
 import './App.css';
 
@@ -118,13 +118,24 @@ function MenuList({ addToCart, showToast }) {
       <div className="menu-grid">
         {menuItems.map(item => (
           <div key={item.id} className="menu-card">
-            <div className="item-image">{item.image || '🍽️'}</div>
+            <div className="item-image-container">
+              <div className="item-image">{item.image || '🍽️'}</div>
+              {item.category && <span className="category-badge">{item.category}</span>}
+            </div>
             <div className="item-info">
-              <h3>{item.name || item.title}</h3>
+              <div className="item-header">
+                <h3>{item.name || item.title}</h3>
+              </div>
               <p className="description">{item.description}</p>
               <div className="item-footer">
-                <span className="price">PKR {parseFloat(item.price ?? 0).toFixed(2)}</span>
-                <button className="add-btn" onClick={() => addToCart(item)}>Add to Order</button>
+                <div className="price-tag">
+                  <span className="currency">PKR</span>
+                  <span className="amount">{parseFloat(item.price ?? 0).toLocaleString()}</span>
+                </div>
+                <button className="add-btn" onClick={() => addToCart(item)}>
+                  <span>Add</span>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                </button>
               </div>
             </div>
           </div>
@@ -222,6 +233,29 @@ function MainApp() {
   const [orderSubmitting, setOrderSubmitting] = useState(false);
   const [hasLastOrder, setHasLastOrder] = useState(() => !!readStoredOrderPayload());
   const [lastOrderStatus, setLastOrderStatus] = useState(() => readStoredOrderPayload()?.status || 'pending');
+  const [menuTitle, setMenuTitle] = useState('Smart Cafe');
+
+  useEffect(() => {
+    const fetchMenuTitle = async () => {
+      if (!activeMenuId) {
+        setMenuTitle('Smart Cafe');
+        return;
+      }
+      try {
+        const menuDocRef = doc(db, 'menus', activeMenuId);
+        const menuDocSnap = await getDoc(menuDocRef);
+        if (menuDocSnap.exists()) {
+          setMenuTitle(menuDocSnap.data().title || menuDocSnap.data().name || 'Smart Cafe');
+        } else {
+          setMenuTitle('Smart Cafe');
+        }
+      } catch (err) {
+        console.error("Error fetching menu title:", err);
+        setMenuTitle('Smart Cafe');
+      }
+    };
+    fetchMenuTitle();
+  }, [activeMenuId]);
 
   const showToast = (message) => {
     setToast(message);
@@ -338,7 +372,7 @@ function MainApp() {
 
       <header className="header">
         <div className="header-content">
-          <h1>Smart Cafe</h1>
+          <h1>{menuTitle}</h1>
           <div className="header-actions">
             {hasLastOrder && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -384,7 +418,7 @@ function MainApp() {
       <main className={`main-content${isOrderSuccess ? ' main-content--success' : ''}`}>
         {!isOrderSuccess && (
           <section className="hero">
-            <h2>Welcome to Smart Cafe</h2>
+            <h2>Welcome to  {menuTitle} Menu</h2>
             <p>Freshly brewed coffee and delicious snacks delivered to your table.</p>
           </section>
         )}
