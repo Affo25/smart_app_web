@@ -325,7 +325,6 @@ function MainApp() {
   const [toast, setToast] = useState(null);
   const [orderSubmitting, setOrderSubmitting] = useState(false);
   const [hasLastOrder, setHasLastOrder] = useState(() => readStoredOrders().length > 0);
-  const [lastOrderStatus, setLastOrderStatus] = useState(() => readStoredOrders()[0]?.status || 'pending');
   const [menuTitle, setMenuTitle] = useState('Smart Cafe');
 
   useEffect(() => {
@@ -404,7 +403,6 @@ function MainApp() {
       };
       saveOrderToStorage(orderPayload);
       setHasLastOrder(true);
-      setLastOrderStatus('pending');
       setCart([]);
       setIsCartOpen(false);
       showToast('Order placed successfully! 🎉');
