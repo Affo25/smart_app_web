@@ -7,22 +7,23 @@ import './App.css';
 /** Default menu document ID under `menus/{id}` (items live in `menus/{id}/items`) */
 const DEFAULT_MENU_ID = 'OQLY1DRSFXwlHHkNicAc';
 
-const STORAGE_KEY_LAST_ORDER = 'smartCafeLastOrder';
+const STORAGE_KEY_ORDERS = 'smartCafeOrders';
 
-function readStoredOrderPayload() {
+function readStoredOrders() {
   try {
-    const raw = sessionStorage.getItem(STORAGE_KEY_LAST_ORDER);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    return parsed?.orderId ? parsed : null;
+    const raw = localStorage.getItem(STORAGE_KEY_ORDERS);
+    return raw ? JSON.parse(raw) : [];
   } catch {
-    return null;
+    return [];
   }
 }
 
-function persistLastOrderPayload(payload) {
+function saveOrderToStorage(orderData) {
   try {
-    sessionStorage.setItem(STORAGE_KEY_LAST_ORDER, JSON.stringify(payload));
+    const orders = readStoredOrders();
+    // Add new order at the beginning
+    const updatedOrders = [orderData, ...orders.filter(o => o.orderId !== orderData.orderId)];
+    localStorage.setItem(STORAGE_KEY_ORDERS, JSON.stringify(updatedOrders));
   } catch {
     /* ignore quota / private mode */
   }
@@ -145,53 +146,145 @@ function MenuList({ addToCart, showToast }) {
   );
 }
 
-function OrderSuccessScreen({ lastOrderStatus }) {
+function OrdersList() {
   const navigate = useNavigate();
-  const location = useLocation();
-  const data = location.state?.orderId ? location.state : readStoredOrderPayload();
+  const orders = readStoredOrders();
 
-  if (!data?.orderId) {
-    return <Navigate to={`/menu/${DEFAULT_MENU_ID}`} replace />;
+  if (orders.length === 0) {
+    return (
+      <section className="orders-list-page">
+        <div className="empty-state">
+          <h2>No orders found</h2>
+          <p>You haven't placed any orders yet.</p>
+          <button className="order-success-btn-primary" onClick={() => navigate('/')}>
+            Go to Menu
+          </button>
+        </div>
+      </section>
+    );
   }
 
-  const { orderId, items, total, menuId } = data;
-  const backMenuPath = `/menu/${menuId || DEFAULT_MENU_ID}`;
+  return (
+    <section className="orders-list-page">
+      <div className="orders-list-container">
+        <div className="orders-list-header">
+          <h1 className="orders-list-title">My Orders</h1>
+          <button 
+            className="order-success-btn-primary" 
+            style={{ width: 'auto', minHeight: 'auto', padding: '0.6rem 1.2rem', fontSize: '0.9rem' }}
+            onClick={() => navigate('/')}
+          >
+            + New Order
+          </button>
+        </div>
+        <div className="orders-grid">
+          {orders.map((order) => (
+            <div 
+              key={order.orderId} 
+              className="order-item-card"
+              onClick={() => navigate(`/order/${order.orderId}`, { state: order })}
+            >
+              <div className="order-item-header">
+                <h3>Order #{order.orderId.slice(-6).toUpperCase()}</h3>
+                <span className={`status-badge ${(order.status || 'pending').toLowerCase()}`}>
+                  {order.status}
+                </span>
+              </div>
+              <p className="order-date">
+                {new Date(order.createdAt).toLocaleDateString()} at {new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </p>
+              <div className="order-summary-row">
+                <span>{order.items.length} items</span>
+                <span className="order-amount">PKR {order.total.toFixed(2)}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
 
-  // Use lastOrderStatus if it's available and refers to the same order we are viewing
-  const displayStatus = (lastOrderStatus && data.orderId === readStoredOrderPayload()?.orderId) 
-    ? lastOrderStatus 
-    : data.status;
+function OrderDetailsScreen() {
+  const navigate = useNavigate();
+  const { orderId } = useParams();
+  const location = useLocation();
+  const [order, setOrder] = useState(location.state || null);
+  const [loading, setLoading] = useState(!order);
+
+  useEffect(() => {
+    if (!orderId) return;
+
+    // First try to find in stored orders
+    const stored = readStoredOrders().find(o => o.orderId === orderId);
+    if (stored) {
+      setOrder(stored);
+      setLoading(false);
+    }
+
+    // Always fetch latest from Firebase to be sure
+    const orderRef = doc(db, 'orders', orderId);
+    const unsubscribe = onSnapshot(orderRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        const fullOrder = {
+          orderId: docSnap.id,
+          ...data,
+          // Ensure it matches our format
+          total: data.totalAmount || data.total || 0,
+          items: data.items || [],
+          createdAt: data.createdAtClient || (data.createdAt?.toDate?.()?.toISOString()) || new Date().toISOString()
+        };
+        setOrder(fullOrder);
+        saveOrderToStorage(fullOrder);
+        setLoading(false);
+      } else if (!stored) {
+        setLoading(false);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [orderId]);
+
+  if (loading) return <div className="loading-state">Loading order details...</div>;
+
+  if (!order) {
+    return (
+      <section className="order-success-page">
+        <div className="empty-state">
+          <h2>Order not found</h2>
+          <p>We couldn't find the order you're looking for.</p>
+          <button className="order-success-btn-primary" onClick={() => navigate('/orders')}>
+            Back to Orders
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  const { items, total, status } = order;
 
   return (
     <section className="order-success-page" aria-labelledby="order-success-title">
       <div className="order-success-inner">
-        <div className="order-success-badge" aria-hidden>✓</div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', marginBottom: '1.5rem' }}>
+        <button className="back-link" onClick={() => navigate('/orders')}>
+          ← Back to Orders
+        </button>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', marginBottom: '1.5rem', marginTop: '1rem' }}>
           <h1 id="order-success-title" className="order-success-heading" style={{ fontSize: '1.5rem', margin: 0 }}>
             Order Details
           </h1>
-          <span className={`status-badge ${(displayStatus || 'pending').toLowerCase()}`}>
-            {displayStatus}
+          <span className={`status-badge ${(status || 'pending').toLowerCase()}`}>
+            {status}
           </span>
         </div>
         <p className="order-success-id">Order #{orderId}</p>
-{/* 
-        <div className="order-success-delivery">
-          <span className="order-success-delivery-icon" aria-hidden>🕒</span>
-          <div className="order-success-delivery-text">
-            <p className="order-success-delivery-title">Estimated delivery</p>
-            <p className="order-success-delivery-time">Your order will arrive in about <strong>30 minutes</strong>.</p>
-            <p className="order-success-delivery-note">
-              We will prepare your items fresh and bring them to your table.
-            </p>
-          </div>
-        </div> */}
 
         <div className="order-success-summary">
-          <h2 className="order-success-summary-title">Your order</h2>
+          <h2 className="order-success-summary-title">Order Items</h2>
           <ul className="order-success-lines">
-            {items.map((item) => (
-              <li key={item.id} className="order-success-line">
+            {items.map((item, idx) => (
+              <li key={idx} className="order-success-line">
                 <span>
                   {item.quantity}× {item.name || item.title}
                 </span>
@@ -209,9 +302,9 @@ function OrderSuccessScreen({ lastOrderStatus }) {
           <button
             type="button"
             className="order-success-btn-primary"
-            onClick={() => navigate(backMenuPath, { replace: true })}
+            onClick={() => navigate(`/menu/${order.menuId || DEFAULT_MENU_ID}`)}
           >
-            New order
+            New Order
           </button>
         </div>
       </div>
@@ -231,8 +324,8 @@ function MainApp() {
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [toast, setToast] = useState(null);
   const [orderSubmitting, setOrderSubmitting] = useState(false);
-  const [hasLastOrder, setHasLastOrder] = useState(() => !!readStoredOrderPayload());
-  const [lastOrderStatus, setLastOrderStatus] = useState(() => readStoredOrderPayload()?.status || 'pending');
+  const [hasLastOrder, setHasLastOrder] = useState(() => readStoredOrders().length > 0);
+  const [lastOrderStatus, setLastOrderStatus] = useState(() => readStoredOrders()[0]?.status || 'pending');
   const [menuTitle, setMenuTitle] = useState('Smart Cafe');
 
   useEffect(() => {
@@ -263,38 +356,8 @@ function MainApp() {
   };
 
   useEffect(() => {
-    if (!hasLastOrder) return;
-
-    const stored = readStoredOrderPayload();
-    if (!stored?.orderId) return;
-
-    const orderRef = doc(db, 'orders', stored.orderId);
-    const unsubscribe = onSnapshot(orderRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const newData = docSnap.data();
-        const currentStored = readStoredOrderPayload();
-        
-        // Update local status state
-        setLastOrderStatus(newData.status);
-
-        // Only show toast and update storage if status actually changed
-        if (currentStored && newData.status !== currentStored.status) {
-          showToast(`Order status updated to: ${newData.status}`);
-          persistLastOrderPayload({ ...currentStored, status: newData.status });
-          
-          // Force a state update if we're on the success screen to reflect the new status
-          if (location.pathname === '/order-success') {
-            navigate('/order-success', { 
-              state: { ...currentStored, status: newData.status }, 
-              replace: true 
-            });
-          }
-        }
-      }
-    });
-
-    return () => unsubscribe();
-  }, [hasLastOrder, location.pathname, navigate]);
+    setHasLastOrder(readStoredOrders().length > 0);
+  }, [location.pathname]);
 
   const addToCart = (item) => {
     setCart(prevCart => {
@@ -337,14 +400,15 @@ function MainApp() {
         total: totalAmount,
         menuId: activeMenuId || DEFAULT_MENU_ID,
         status: 'pending',
+        createdAt: new Date().toISOString(),
       };
-      persistLastOrderPayload(orderPayload);
+      saveOrderToStorage(orderPayload);
       setHasLastOrder(true);
       setLastOrderStatus('pending');
       setCart([]);
       setIsCartOpen(false);
       showToast('Order placed successfully! 🎉');
-      navigate('/order-success', { state: orderPayload, replace: true });
+      navigate(`/order/${docRef.id}`, { state: orderPayload, replace: true });
     } catch (err) {
       console.error('Error saving order:', err);
       showToast('Could not save your order. Please try again.');
@@ -355,15 +419,10 @@ function MainApp() {
 
   const totalAmount = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
-  const isOrderSuccess = location.pathname === '/order-success';
+  const isOrderPage = location.pathname.startsWith('/order');
 
-  const openOrderDetails = () => {
-    const payload = readStoredOrderPayload();
-    if (!payload?.orderId) {
-      showToast('No order yet. Place an order to see details here.');
-      return;
-    }
-    navigate('/order-success', { state: payload });
+  const openOrdersList = () => {
+    navigate('/orders');
   };
 
   return (
@@ -375,38 +434,33 @@ function MainApp() {
           <h1>{menuTitle}</h1>
           <div className="header-actions">
             {hasLastOrder && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <span className={`status-badge ${(lastOrderStatus || 'pending').toLowerCase()}`} style={{ fontSize: '0.7rem' }}>
-                  {lastOrderStatus}
-                </span>
-                <button
-                  type="button"
-                  className="header-icon-btn"
-                  onClick={openOrderDetails}
-                  aria-label="View order details"
-                  title="Order details"
+              <button
+                type="button"
+                className="header-icon-btn"
+                onClick={openOrdersList}
+                aria-label="View orders"
+                title="My Orders"
+              >
+                <svg
+                  className="header-icon-svg"
+                  width="22"
+                  height="22"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                  aria-hidden
                 >
-                  <svg
-                    className="header-icon-svg"
-                    width="22"
-                    height="22"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg"
-                    aria-hidden
-                  >
-                    <path
-                      d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                </button>
-              </div>
+                  <path
+                    d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </button>
             )}
-            {!isOrderSuccess && (
+            {!isOrderPage && (
               <button className="cart-toggle" onClick={() => setIsCartOpen(!isCartOpen)}>
                 Cart ({cart.length})
               </button>
@@ -415,8 +469,8 @@ function MainApp() {
         </div>
       </header>
 
-      <main className={`main-content${isOrderSuccess ? ' main-content--success' : ''}`}>
-        {!isOrderSuccess && (
+      <main className={`main-content${isOrderPage ? ' main-content--success' : ''}`}>
+        {!isOrderPage && (
           <section className="hero">
             <h2>Welcome to  {menuTitle} Menu</h2>
             <p>Freshly brewed coffee and delicious snacks delivered to your table.</p>
@@ -425,7 +479,8 @@ function MainApp() {
 
         <Routes>
           <Route path="/menu/:menuId" element={<MenuList addToCart={addToCart} showToast={showToast} />} />
-          <Route path="/order-success" element={<OrderSuccessScreen lastOrderStatus={lastOrderStatus} />} />
+          <Route path="/orders" element={<OrdersList />} />
+          <Route path="/order/:orderId" element={<OrderDetailsScreen />} />
           <Route path="/" element={<Navigate to={`/menu/${DEFAULT_MENU_ID}`} replace />} />
         </Routes>
       </main>
