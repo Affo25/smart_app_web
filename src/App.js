@@ -29,6 +29,11 @@ function saveOrderToStorage(orderData) {
   }
 }
 
+function getRecentMenuId() {
+  const orders = readStoredOrders();
+  return orders.length > 0 ? (orders[0].menuId || DEFAULT_MENU_ID) : DEFAULT_MENU_ID;
+}
+
 /** `menuId` from `/menu/:menuId` or `?menuId=` (path wins if both present). */
 function getMenuIdFromUrl(pathname, search) {
   const fromPath = pathname.match(/^\/menu\/([^/]+)/);
@@ -149,6 +154,7 @@ function MenuList({ addToCart, showToast }) {
 function OrdersList() {
   const navigate = useNavigate();
   const orders = readStoredOrders();
+  const recentMenuId = getRecentMenuId();
 
   if (orders.length === 0) {
     return (
@@ -156,7 +162,7 @@ function OrdersList() {
         <div className="empty-state">
           <h2>No orders found</h2>
           <p>You haven't placed any orders yet.</p>
-          <button className="order-success-btn-primary" onClick={() => navigate('/')}>
+          <button className="order-success-btn-primary" onClick={() => navigate(`/menu/${recentMenuId}`)}>
             Go to Menu
           </button>
         </div>
@@ -172,7 +178,7 @@ function OrdersList() {
           <button 
             className="order-success-btn-primary" 
             style={{ width: 'auto', minHeight: 'auto', padding: '0.6rem 1.2rem', fontSize: '0.9rem' }}
-            onClick={() => navigate('/')}
+            onClick={() => navigate(`/menu/${recentMenuId}`)}
           >
             + New Order
           </button>
@@ -479,7 +485,7 @@ function MainApp() {
           <Route path="/menu/:menuId" element={<MenuList addToCart={addToCart} showToast={showToast} />} />
           <Route path="/orders" element={<OrdersList />} />
           <Route path="/order/:orderId" element={<OrderDetailsScreen />} />
-          <Route path="/" element={<Navigate to={`/menu/${DEFAULT_MENU_ID}`} replace />} />
+          <Route path="/" element={<Navigate to={`/menu/${getRecentMenuId()}`} replace />} />
         </Routes>
       </main>
 
